@@ -1,0 +1,33 @@
+name: Build FilzaApplySandboxExt dylib (iOS 26.3)
+on: [push, workflow_dispatch]
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Setup Theos
+      run: |
+        git clone --depth 1 https://github.com/theos/theos.git $HOME/theos
+    
+    - name: Build dylib
+      run: |
+        export THEOS=$HOME/theos
+        make clean || true
+        make package FINALPACKAGE=1 2>&1 | tail -20
+    
+    - name: Find and rename dylib
+      run: |
+        find . -name "*.dylib" -type f
+        find . -name "*.deb" -type f
+        # Copy dylib for easy download
+        mkdir -p output
+        find . -name "FilzaApplySandboxExt.dylib" -type f -not -path "./.theos/*" -exec cp {} output/ \; 2>/dev/null
+        find .theos -name "FilzaApplySandboxExt.dylib" -type f -exec cp {} output/ \; 2>/dev/null
+        ls -la output/
+    
+    - name: Upload dylib
+      uses: actions/upload-artifact@v4
+      with:
+        name: FilzaApplySandboxExt-iOS26.3
+        path: output/
