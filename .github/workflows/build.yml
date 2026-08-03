@@ -1,33 +1,62 @@
-name: Build FilzaApplySandboxExt
+name: Full Manual Build
 on: [push, workflow_dispatch]
 jobs:
   build:
     runs-on: macos-latest
     steps:
     - uses: actions/checkout@v4
-    - name: Setup Theos
+    
+    - name: Install Theos (for headers only)
       run: |
         git clone --depth 1 https://github.com/theos/theos.git $HOME/theos
         cd $HOME/theos && ./bin/update-theos 2>&1 | tail -3
-    - name: Build
+    
+    - name: Manual Compile
       run: |
-        export THEOS=$HOME/theos
-        make clean 2>/dev/null; make -j4 2>&1 | tail -15
-    - name: Post-process: fix code sign space
-      run: |
-        for DYLIB in $(find .theos -name "FilzaApplySandboxExt.dylib"); do
-          echo "Processing: $DYLIB"
-          # Add empty rpath then remove it to force LC_CODE_SIGNATURE reallocation
-          install_name_tool -add_rpath /tmp "$DYLIB" 2>/dev/null
-          install_name_tool -delete_rpath /tmp "$DYLIB" 2>/dev/null
-          # Verify it has LC_CODE_SIGNATURE
-          otool -l "$DYLIB" | grep -A1 LC_CODE_SIGNATURE
+        SDK=$(xcrun --sdk iphoneos --show-sdk-path)
+        echo "SDK: $SDK"
+        
+        # Collect all .m and .c files for the dylib
+        OBJCFILES="Tweak.m sandbox_escape.m apfs_own.m"
+        KEXPLOIT="kexploit/kexploit_opa334.m kexploit/krw.m kexploit/kutils.m kexploit/offsets.m kexploit/vnode.m"
+        UTILS="utils/file.c utils/hexdump.c utils/process.c"
+        
+        # Build obj files
+        mkdir -p build/arm64 build/arm64e
+        
+        for ARCH in arm64 arm64e; do
+          echo "=== Building $ARCH ==="
+          FLAGS="-arch $ARCH -isysroot $SDK -miphoneos-version-min=15.0 -fobjc-arc"
+          FLAGS="$FLAGS -I. -Ikexploit -Ikpf -Iutils -IXPF/src"
+          FLAGS="$FLAGS -IFrameworks -Wno-everything"
+          
+          for f in $OBJCFILES $KEXPLOIT $UTILS; do
+            out="build/$ARCH/$(basename $f .m).o"
+            out="${out%.c}.o"
+            xcrun --sdk iphoneos clang $FLAGS -c "$f" -o "$out" 2>&1 | grep -i error | head -3
+          done
         done
-        mkdir -p output
-        find .theos -name "FilzaApplySandboxExt.dylib" -exec cp {} output/ \;
-        ls -la output/
-        file output/*.dylib
+        
+        # Link into single dylib
+        ARM64_OBJ=$(find build/arm64 -name "*.o")
+        ARM64E_OBJ=$(find build/arm64e -name "*.o")
+        
+        echo "ARM64 objects: $(echo $ARM64_OBJ | wc -w)"
+        echo "ARM64E objects: $(echo $ARM64E_OBJ | wc -w)"
+        
+        # Check if any .o files missing
+        missing=0
+        for f in $OBJCFILES $KEXPLOIT $UTILS; do
+          name=$(basename $f .m)
+          name="${name%.c}"
+          if [ ! -f "build/arm64/${name}.o" ]; then
+            echo "MISSING: build/arm64/${name}.o"
+            missing=$((missing+1))
+          fi
+        done
+        echo "Missing files: $missing"
     - uses: actions/upload-artifact@v4
+      if: always()
       with:
-        name: FilzaApplySandboxExt
-        path: output/
+        name: build-log
+        path: build/
