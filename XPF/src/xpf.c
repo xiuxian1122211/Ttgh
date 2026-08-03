@@ -1,8 +1,8 @@
-#include <choma/Fat.h>
-#include <choma/MachO.h>
-#include <choma/PatchFinder.h>
-#include <choma/MachOByteOrder.h>
-#include <choma/BufferedStream.h>
+#include "../external/ChOma/include/choma/Fat.h>
+#include "../external/ChOma/include/choma/MachO.h>
+#include "../external/ChOma/include/choma/PatchFinder.h>
+#include "../external/ChOma/include/choma/MachOByteOrder.h>
+#include "../external/ChOma/include/choma/BufferedStream.h>
 #include <mach/machine.h>
 #include "xpf.h"
 #include "decompress.h"

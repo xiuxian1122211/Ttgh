@@ -1,10 +1,10 @@
 #include <stdint.h>
 
-#include <choma/Fat.h>
-#include <choma/Util.h>
-#include <choma/PatchFinder.h>
-#include <choma/PatchFinder_arm64.h>
-#include <choma/arm64.h>
+#include "../external/ChOma/include/choma/Fat.h"
+#include "../external/ChOma/include/choma/Util.h"
+#include "../external/ChOma/include/choma/PatchFinder.h"
+#include "../external/ChOma/include/choma/PatchFinder_arm64.h"
+#include "../external/ChOma/include/choma/arm64.h"
 #include <xpc/xpc.h>
 
 typedef struct s_XPFItem {

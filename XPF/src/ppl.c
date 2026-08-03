@@ -1,7 +1,7 @@
 #import "ppl.h"
 #import "xpf.h"
-#include <choma/arm64.h>
-#include <choma/PatchFinder.h>
+#include "../external/ChOma/include/choma/arm64.h>
+#include "../external/ChOma/include/choma/PatchFinder.h>
 
 static uint64_t xpf_find_ppl_dispatch_section(void)
 {
