@@ -24,3 +24,14 @@ jobs:
       with:
         name: FilzaApplySandboxExt-iOS26.3
         path: output/
+
+# After Theos build, add padding for code signature
+- name: Add code signature space
+  run: |
+    DYLIB=$(find .theos -name "FilzaApplySandboxExt.dylib" | head -1)
+    if [ -n "$DYLIB" ]; then
+      echo "Adding LC_CODE_SIGNATURE padding to $DYLIB"
+      # Use install_name_tool to trigger reallocation with padding
+      install_name_tool -add_rpath @executable_path/Frameworks "$DYLIB" 2>/dev/null || true
+      install_name_tool -delete_rpath @executable_path/Frameworks "$DYLIB" 2>/dev/null || true
+    fi
