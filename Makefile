@@ -33,10 +33,10 @@ FilzaApplySandboxExt_CCFLAGS = $(FilzaApplySandboxExt_CFLAGS)
 FilzaApplySandboxExt_OBJCFLAGS = $(FilzaApplySandboxExt_CFLAGS)
 FilzaApplySandboxExt_OBJCCFLAGS = $(FilzaApplySandboxExt_CFLAGS)
 
-FilzaApplySandboxExt_LDFLAGS = -headerpad_max_install_names
 FilzaApplySandboxExt_FRAMEWORKS = UIKit Foundation IOKit CoreFoundation
 FilzaApplySandboxExt_PRIVATE_FRAMEWORKS = IOSurface
 FilzaApplySandboxExt_LIBRARIES = z sandbox
+FilzaApplySandboxExt_LDFLAGS = -Wl,-headerpad_max_install_names
 
 FilzaApplySandboxExt_INSTALL_TARGET_PROCESSES = Filza
 
