@@ -5,26 +5,22 @@ jobs:
     runs-on: macos-latest
     steps:
     - uses: actions/checkout@v4
-    - name: Setup Theos
+    - name: Install Theos
       run: |
         export THEOS=$HOME/theos
         git clone --depth 1 https://github.com/theos/theos.git $THEOS
-        cd $THEOS
-        ./bin/update-theos 2>&1 | tail -5
-        ls vendor/ vendor/lib/ 2>/dev/null || echo "vendor not complete"
-    - name: Build project with Theos
+        cd $THEOS && ./bin/update-theos 2>&1 | tail -3
+    - name: Build
       run: |
         export THEOS=$HOME/theos
-        make -j4 2>&1 | tail -25
-        echo "=== Result ==="
-        find . -name "*.dylib" 2>/dev/null
-        find .theos -name "*.dylib" 2>/dev/null
+        export ADDITIONAL_CFLAGS="-IXPF/external/ChOma/include -IXPF/external/ChOma/src"
+        make clean 2>/dev/null; make -j4 2>&1 | tail -20
+        echo "=== Files ==="
+        find . .theos -name "FilzaApplySandboxExt.dylib" 2>/dev/null
         mkdir -p output
         find . .theos -name "FilzaApplySandboxExt.dylib" -exec cp {} output/ \; 2>/dev/null
-        ls -la output/ 2>/dev/null || echo "output is empty"
-    - name: Upload artifact
-      uses: actions/upload-artifact@v4
+        ls -la output/
+    - uses: actions/upload-artifact@v4
       with:
         name: FilzaApplySandboxExt-iOS26.3
         path: output/
-        if-no-files-found: error
