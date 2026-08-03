@@ -40,3 +40,6 @@ FilzaApplySandboxExt_LIBRARIES = z sandbox
 FilzaApplySandboxExt_INSTALL_TARGET_PROCESSES = Filza
 
 include $(THEOS_MAKE_PATH)/tweak.mk
+
+# Fix for ChOma include path
+FilzaApplySandboxExt_CFLAGS += -IXPF/external/ChOma/include -IXPF/external/ChOma/src
