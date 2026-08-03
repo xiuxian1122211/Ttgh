@@ -1,4 +1,4 @@
-name: Build and fix code signature
+name: Build FilzaApplySandboxExt
 on: [push, workflow_dispatch]
 jobs:
   build:
@@ -7,73 +7,27 @@ jobs:
     - uses: actions/checkout@v4
     - name: Setup Theos
       run: |
-        export THEOS=$HOME/theos
-        git clone --depth 1 https://github.com/theos/theos.git $THEOS
-        cd $THEOS && ./bin/update-theos 2>&1 | tail -3
+        git clone --depth 1 https://github.com/theos/theos.git $HOME/theos
+        cd $HOME/theos && ./bin/update-theos 2>&1 | tail -3
     - name: Build
       run: |
         export THEOS=$HOME/theos
-        make clean 2>/dev/null; make -j4 2>&1 | tail -10
-        find . .theos -name "FilzaApplySandboxExt.dylib" 2>/dev/null
-    - name: Add code signature space
+        make clean 2>/dev/null; make -j4 2>&1 | tail -15
+    - name: Post-process: fix code sign space
       run: |
-        DYLIB=$(find .theos -name "FilzaApplySandboxExt.dylib" | head -1)
-        if [ -z "$DYLIB" ]; then echo "NO DYLIB FOUND"; exit 1; fi
-        echo "Dylib: $DYLIB"
-        python3 << 'PYEOF'
-import struct, os, shutil
-
-dylib_path = os.environ['DYLIB_PATH'] if 'DYLIB_PATH' in os.environ else None
-# Find the dylib
-import glob
-dylibs = glob.glob('.theos/**/FilzaApplySandboxExt.dylib', recursive=True)
-if not dylibs:
-    print("ERROR: dylib not found")
-    exit(1)
-dylib = dylibs[0]
-print(f"Processing: {dylib}")
-
-with open(dylib, 'rb') as f:
-    data = bytearray(f.read())
-
-# Read Mach-O header
-magic = struct.unpack_from('<I', data, 0)[0]
-ncmds = struct.unpack_from('<I', data, 16)[0]
-sizeofcmds = struct.unpack_from('<I', data, 20)[0]
-
-# Calculate where LC_CODE_SIGNATURE should go
-# Add 4096 bytes of padding
-padding = 4096
-padding_cmd = struct.pack('<II', 0x1D, 16) + struct.pack('<II', 0, padding)
-# Insert LC_CODE_SIGNATURE before the last command
-insert_pos = 24 + sizeofcmds - 8
-newdata = bytearray(data[:insert_pos]) + padding_cmd + bytearray(data[insert_pos:])
-# Update sizeofcmds
-struct.pack_into('<I', newdata, 20, sizeofcmds + 16)
-# Update offsets in all segments
-pos = 24
-for i in range(ncmds):
-    cmd = struct.unpack_from('<I', newdata, pos)[0]
-    cmdsize = struct.unpack_from('<I', newdata, pos+4)[0]
-    if cmd == 0x19:  # LC_SEGMENT_64
-        fileoff = struct.unpack_from('<Q', newdata, pos+40)[0]
-        if fileoff > 0:
-            struct.pack_into('<Q', newdata, pos+40, fileoff + 16)
-    pos += cmdsize
-
-with open(dylib, 'wb') as f:
-    f.write(newdata)
-print(f"Added LC_CODE_SIGNATURE padding to {dylib}")
-PYEOF
-      env:
-        DYLIB_PATH: ${{ steps.build.outputs.dylib }}
-    - name: Prepare output
-      run: |
+        for DYLIB in $(find .theos -name "FilzaApplySandboxExt.dylib"); do
+          echo "Processing: $DYLIB"
+          # Add empty rpath then remove it to force LC_CODE_SIGNATURE reallocation
+          install_name_tool -add_rpath /tmp "$DYLIB" 2>/dev/null
+          install_name_tool -delete_rpath /tmp "$DYLIB" 2>/dev/null
+          # Verify it has LC_CODE_SIGNATURE
+          otool -l "$DYLIB" | grep -A1 LC_CODE_SIGNATURE
+        done
         mkdir -p output
         find .theos -name "FilzaApplySandboxExt.dylib" -exec cp {} output/ \;
         ls -la output/
-        file output/FilzaApplySandboxExt.dylib
+        file output/*.dylib
     - uses: actions/upload-artifact@v4
       with:
-        name: FilzaApplySandboxExt-iOS26.3
+        name: FilzaApplySandboxExt
         path: output/
