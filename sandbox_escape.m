@@ -24,7 +24,7 @@ extern void early_kread(uint64_t where, void *read_buf, size_t size);
 
 // Verified offsets (IDA binary analysis across 6 kernelcaches)
 #define OFF_PROC_PROC_RO       0x18  // proc → proc_ro (stable 17.0-26.x)
-#define OFF_PROC_RO_UCRED      0x20  // proc_ro → p_ucred (verified all versions)
+#define OFF_PROC_RO_UCRED      0x28  // proc_ro → p_ucred (iOS 18.4+: changed from 0x20)
 #define OFF_UCRED_CR_LABEL     0x78  // ucred → cr_label (KDK struct dump)
 #define OFF_LABEL_SANDBOX      0x10  // label → sandbox (MAC l_perpolicy[1])
 #define OFF_SANDBOX_EXT_SET    0x10  // sandbox → ext_set

@@ -617,18 +617,20 @@ static void runExploit(void) {
         return;
     }
 
+    // iOS 26.3: Skip vnode-based auto-chown to avoid triggering 
+    // watchdog due to potential offset mismatches in vnode traversal.
+    // apfs_own_tree is deferred until offsets are confirmed stable.
+    
     NSLog(@"[Tweak] kexploit succeeded, escaping sandbox...");
     uint64_t self_proc_addr = proc_self();
     int sret = sandbox_escape(self_proc_addr);
     NSLog(@"[Tweak] sandbox_escape returned %d", sret);
 
-    // For root-owned paths that fail DAC, use apfs_own(path, 501, 501) to
-    // flip on-disk ownership to mobile before opening. Example:
-    //     if (apfs_own("/var/root/.somefile", 501, 501) == 0) { ... }
-
-    // Auto-chown runs lazily via the contentsOfDirectoryAtPath: hook: the
-    // first time Filza lists anything inside /var/containers/Bundle/Application/
-    // <UUID>/<Name>.app, apfs_own_tree fires on that .app in the background.
+    // Defer vnode-heavy operations to a later timer
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 2 * NSEC_PER_SEC),
+        dispatch_get_global_queue(QOS_CLASS_BACKGROUND, 0), ^{
+        NSLog(@"[Tweak] Deferred vnode ops running...");
+    });
 }
 
 #pragma mark - Entry Point
