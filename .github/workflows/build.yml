@@ -30,6 +30,7 @@ jobs:
           FLAGS="$FLAGS -I. -Ikexploit -Ikpf -Iutils -IXPF/src"
           FLAGS="$FLAGS -IFrameworks -Wno-everything"
           
+          echo "Compiling $f..."
           for f in $OBJCFILES $KEXPLOIT $UTILS; do
             out="build/$ARCH/$(basename $f .m).o"
             out="${out%.c}.o"
@@ -55,8 +56,35 @@ jobs:
           fi
         done
         echo "Missing files: $missing"
+    - name: Link dylib
+      run: |
+        SDK=$(xcrun --sdk iphoneos --show-sdk-path)
+        LFLAGS="-arch arm64 -isysroot $SDK -miphoneos-version-min=15.0"
+        LFLAGS="$LFLAGS -dynamiclib -compatibility_version 1.0 -current_version 1.0"
+        LFLAGS="$LFLAGS -install_name @executable_path/FilzaApplySandboxExt.dylib"
+        LFLAGS="$LFLAGS -framework Foundation -framework CoreFoundation -framework UIKit -framework IOKit -framework IOSurface"
+        LFLAGS="$LFLAGS -lz -lsandbox"
+        LFLAGS="$LFLAGS -headerpad_max_install_names"
+        
+        ARM64_OBJ=$(find build/arm64 -name "*.o" | sort)
+        xcrun --sdk iphoneos clang $LFLAGS $ARM64_OBJ -o build/FilzaApplySandboxExt_arm64.dylib 2>&1 | head -20
+        
+        LFLAGS_E="-arch arm64e -isysroot $SDK -miphoneos-version-min=15.0"
+        LFLAGS_E="$LFLAGS_E -dynamiclib -compatibility_version 1.0"
+        LFLAGS_E="$LFLAGS_E -install_name @executable_path/FilzaApplySandboxExt.dylib"
+        LFLAGS_E="$LFLAGS_E -framework Foundation -framework CoreFoundation -framework UIKit -framework IOKit -framework IOSurface"
+        LFLAGS_E="$LFLAGS_E -lz -lsandbox"
+        LFLAGS_E="$LFLAGS_E -headerpad_max_install_names"
+        
+        ARM64E_OBJ=$(find build/arm64e -name "*.o" | sort)
+        xcrun --sdk iphoneos clang $LFLAGS_E $ARM64E_OBJ -o build/FilzaApplySandboxExt_arm64e.dylib 2>&1 | head -20
+        
+        # Lipo into fat binary
+        lipo -create build/FilzaApplySandboxExt_arm64.dylib build/FilzaApplySandboxExt_arm64e.dylib -o output/FilzaApplySandboxExt.dylib
+        mkdir -p output
+        ls -la output/
+        file output/*.dylib
     - uses: actions/upload-artifact@v4
-      if: always()
       with:
-        name: build-log
-        path: build/
+        name: FilzaApplySandboxExt
+        path: output/
