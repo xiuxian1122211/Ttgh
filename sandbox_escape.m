@@ -26,7 +26,7 @@ static void DSLOG(NSString *fmt, ...) {
     NSLog(@"%@", msg);
     
     if (!g_logFile) {
-        g_logFile = fopen("/var/mobile/Documents/sbx_escape.log", "a");
+        g_logFile = fopen("/tmp/sbx_escape.log", "a");
     }
     if (g_logFile) {
         NSDateFormatter *df = [[NSDateFormatter alloc] init];

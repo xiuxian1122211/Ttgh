@@ -8,17 +8,14 @@
 #include "sandbox_escape.h"
 #include "apfs_own.h"
 
-// === 日志：写到自己沙盒里 ===
+// === 本地日志：写 /tmp（沙盒未逃逸也能写）===
 static void DSLOG(NSString *fmt, ...) {
     va_list args;
     va_start(args, fmt);
     NSString *msg = [[NSString alloc] initWithFormat:fmt arguments:args];
     va_end(args);
     NSLog(@"%@", msg);
-    // 用 NSSearchPathForDirectoriesInDomains 获取自己的 Documents 路径
-    NSString *docs = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES).firstObject;
-    NSString *logPath = [docs stringByAppendingPathComponent:@"sbx_escape.log"];
-    FILE *f = fopen(logPath.UTF8String, "a");
+    FILE *f = fopen("/tmp/sbx_escape.log", "a");
     if (f) {
         NSDateFormatter *df = [[NSDateFormatter alloc] init];
         df.dateFormat = @"HH:mm:ss.SSS";
