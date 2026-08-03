@@ -10,21 +10,56 @@ jobs:
       run: |
         git clone --depth 1 https://github.com/theos/theos.git $HOME/theos
     
-    - name: Build dylib
+    - name: Build dylib only
       run: |
         export THEOS=$HOME/theos
         make clean || true
-        make package FINALPACKAGE=1 2>&1 | tail -20
+        # Build just the dylib, skip the packaging step
+        make internal-library-compile 2>&1 | tail -20 || \
+        make internal-tweak-compile 2>&1 | tail -20 || \
+        make 2>&1 | tail -30
+        # Look for compiled dylib
+        echo "=== Searching for dylib ==="
+        find . -name "*.dylib" -type f 2>/dev/null
+        find $HOME/theos -name "*.dylib" -type f 2>/dev/null
+        find /tmp -name "*.dylib" -type f 2>/dev/null
     
-    - name: Find and rename dylib
+    - name: Manual ARM64 compile (fallback)
+      if: failure()
       run: |
-        find . -name "*.dylib" -type f
-        find . -name "*.deb" -type f
-        # Copy dylib for easy download
+        echo "Theos failed, using manual clang compile"
+        xcrun --sdk iphoneos clang -arch arm64 -arch arm64e \
+          -framework Foundation -framework CoreFoundation -framework UIKit \
+          -framework IOKit -framework IOSurface \
+          -I. -Ikexploit -Ikpf -Iutils -IXPF/src -IXPF/external/ChOma/include \
+          -dynamiclib \
+          -o FilzaApplySandboxExt.dylib \
+          -install_name @executable_path/FilzaApplySandboxExt.dylib \
+          -miphoneos-version-min=15.0 \
+          -fobjc-arc \
+          -lz -lsandbox \
+          Tweak.m apfs_own.m sandbox_escape.m \
+          kexploit/kexploit_opa334.m kexploit/krw.m kexploit/kutils.m kexploit/offsets.m kexploit/vnode.m \
+          kpf/patchfinder.m \
+          utils/file.c utils/hexdump.c utils/process.c \
+          XPF/src/xpf.c XPF/src/common.c XPF/src/decompress.c XPF/src/non_ppl.c XPF/src/ppl.c XPF/src/bad_recovery.c \
+          XPF/external/ChOma/src/Base64.c XPF/external/ChOma/src/BufferedStream.c \
+          XPF/external/ChOma/src/CSBlob.c XPF/external/ChOma/src/CodeDirectory.c \
+          XPF/external/ChOma/src/DER.c XPF/external/ChOma/src/DyldSharedCache.c \
+          XPF/external/ChOma/src/Entitlements.c XPF/external/ChOma/src/Fat.c \
+          XPF/external/ChOma/src/FileStream.c XPF/external/ChOma/src/Host.c \
+          XPF/external/ChOma/src/MachO.c XPF/external/ChOma/src/MachOLoadCommand.c \
+          XPF/external/ChOma/src/MemoryStream.c XPF/external/ChOma/src/PatchFinder.c \
+          XPF/external/ChOma/src/PatchFinder_arm64.c XPF/external/ChOma/src/Util.c \
+          XPF/external/ChOma/src/arm64.c \
+          2>&1
+        
+        echo "=== Result ==="
+        ls -la FilzaApplySandboxExt.dylib 2>/dev/null || echo "NOT FOUND"
+        file FilzaApplySandboxExt.dylib 2>/dev/null || true
+        
         mkdir -p output
-        find . -name "FilzaApplySandboxExt.dylib" -type f -not -path "./.theos/*" -exec cp {} output/ \; 2>/dev/null
-        find .theos -name "FilzaApplySandboxExt.dylib" -type f -exec cp {} output/ \; 2>/dev/null
-        ls -la output/
+        cp FilzaApplySandboxExt.dylib output/ 2>/dev/null || true
     
     - name: Upload dylib
       uses: actions/upload-artifact@v4
