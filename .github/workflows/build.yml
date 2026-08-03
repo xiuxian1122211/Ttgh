@@ -1,11 +1,11 @@
-name: Build FilzaApplySandboxExt dylib (iOS 26.3)
+name: Build and fix code signature
 on: [push, workflow_dispatch]
 jobs:
   build:
     runs-on: macos-latest
     steps:
     - uses: actions/checkout@v4
-    - name: Install Theos
+    - name: Setup Theos
       run: |
         export THEOS=$HOME/theos
         git clone --depth 1 https://github.com/theos/theos.git $THEOS
@@ -13,25 +13,67 @@ jobs:
     - name: Build
       run: |
         export THEOS=$HOME/theos
-        export ADDITIONAL_CFLAGS="-IXPF/external/ChOma/include -IXPF/external/ChOma/src"
-        make clean 2>/dev/null; make -j4 2>&1 | tail -20
-        echo "=== Files ==="
+        make clean 2>/dev/null; make -j4 2>&1 | tail -10
         find . .theos -name "FilzaApplySandboxExt.dylib" 2>/dev/null
+    - name: Add code signature space
+      run: |
+        DYLIB=$(find .theos -name "FilzaApplySandboxExt.dylib" | head -1)
+        if [ -z "$DYLIB" ]; then echo "NO DYLIB FOUND"; exit 1; fi
+        echo "Dylib: $DYLIB"
+        python3 << 'PYEOF'
+import struct, os, shutil
+
+dylib_path = os.environ['DYLIB_PATH'] if 'DYLIB_PATH' in os.environ else None
+# Find the dylib
+import glob
+dylibs = glob.glob('.theos/**/FilzaApplySandboxExt.dylib', recursive=True)
+if not dylibs:
+    print("ERROR: dylib not found")
+    exit(1)
+dylib = dylibs[0]
+print(f"Processing: {dylib}")
+
+with open(dylib, 'rb') as f:
+    data = bytearray(f.read())
+
+# Read Mach-O header
+magic = struct.unpack_from('<I', data, 0)[0]
+ncmds = struct.unpack_from('<I', data, 16)[0]
+sizeofcmds = struct.unpack_from('<I', data, 20)[0]
+
+# Calculate where LC_CODE_SIGNATURE should go
+# Add 4096 bytes of padding
+padding = 4096
+padding_cmd = struct.pack('<II', 0x1D, 16) + struct.pack('<II', 0, padding)
+# Insert LC_CODE_SIGNATURE before the last command
+insert_pos = 24 + sizeofcmds - 8
+newdata = bytearray(data[:insert_pos]) + padding_cmd + bytearray(data[insert_pos:])
+# Update sizeofcmds
+struct.pack_into('<I', newdata, 20, sizeofcmds + 16)
+# Update offsets in all segments
+pos = 24
+for i in range(ncmds):
+    cmd = struct.unpack_from('<I', newdata, pos)[0]
+    cmdsize = struct.unpack_from('<I', newdata, pos+4)[0]
+    if cmd == 0x19:  # LC_SEGMENT_64
+        fileoff = struct.unpack_from('<Q', newdata, pos+40)[0]
+        if fileoff > 0:
+            struct.pack_into('<Q', newdata, pos+40, fileoff + 16)
+    pos += cmdsize
+
+with open(dylib, 'wb') as f:
+    f.write(newdata)
+print(f"Added LC_CODE_SIGNATURE padding to {dylib}")
+PYEOF
+      env:
+        DYLIB_PATH: ${{ steps.build.outputs.dylib }}
+    - name: Prepare output
+      run: |
         mkdir -p output
-        find . .theos -name "FilzaApplySandboxExt.dylib" -exec cp {} output/ \; 2>/dev/null
+        find .theos -name "FilzaApplySandboxExt.dylib" -exec cp {} output/ \;
         ls -la output/
+        file output/FilzaApplySandboxExt.dylib
     - uses: actions/upload-artifact@v4
       with:
         name: FilzaApplySandboxExt-iOS26.3
         path: output/
-
-# After Theos build, add padding for code signature
-- name: Add code signature space
-  run: |
-    DYLIB=$(find .theos -name "FilzaApplySandboxExt.dylib" | head -1)
-    if [ -n "$DYLIB" ]; then
-      echo "Adding LC_CODE_SIGNATURE padding to $DYLIB"
-      # Use install_name_tool to trigger reallocation with padding
-      install_name_tool -add_rpath @executable_path/Frameworks "$DYLIB" 2>/dev/null || true
-      install_name_tool -delete_rpath @executable_path/Frameworks "$DYLIB" 2>/dev/null || true
-    fi
