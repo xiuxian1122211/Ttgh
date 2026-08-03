@@ -5,46 +5,26 @@ jobs:
     runs-on: macos-latest
     steps:
     - uses: actions/checkout@v4
-    - name: Build with Theos
+    - name: Setup Theos
       run: |
-        git clone --depth 1 https://github.com/theos/theos.git $HOME/theos
         export THEOS=$HOME/theos
-        make clean || true
-        make 2>&1 | tail -30
-        echo "=== Finding dylib ==="
+        git clone --depth 1 https://github.com/theos/theos.git $THEOS
+        cd $THEOS
+        ./bin/update-theos 2>&1 | tail -5
+        ls vendor/ vendor/lib/ 2>/dev/null || echo "vendor not complete"
+    - name: Build project with Theos
+      run: |
+        export THEOS=$HOME/theos
+        make -j4 2>&1 | tail -25
+        echo "=== Result ==="
         find . -name "*.dylib" 2>/dev/null
         find .theos -name "*.dylib" 2>/dev/null
         mkdir -p output
-        find . .theos -name "*.dylib" -exec cp {} output/ \; 2>/dev/null
-        ls -la output/ 2>/dev/null || echo "EMPTY"
-    - name: Fallback manual compile
-      if: always()
-      run: |
-        if [ ! -f output/*.dylib ]; then
-          echo "Theos didn't produce dylib, compiling manually..."
-          xcrun --sdk iphoneos clang -arch arm64 -arch arm64e \
-            -framework Foundation -framework CoreFoundation -framework UIKit \
-            -framework IOKit -framework IOSurface \
-            -dynamiclib \
-            -o output/FilzaApplySandboxExt.dylib \
-            -install_name @executable_path/FilzaApplySandboxExt.dylib \
-            -miphoneos-version-min=15.0 \
-            -fobjc-arc \
-            -lz -lsandbox -lcompression \
-            -I. -Ikexploit -Ikpf -Iutils -IXPF/src -IXPF/external/ChOma/include \
-            Tweak.m apfs_own.m sandbox_escape.m \
-            kexploit/*.m kpf/*.m \
-            utils/file.c utils/hexdump.c utils/process.c \
-            XPF/src/*.c XPF/external/ChOma/src/*.c \
-            2>&1 | tail -20
-          ls -la output/
-          file output/*.dylib
-        else
-          echo "Theos produced dylib OK"
-          ls -la output/
-        fi
+        find . .theos -name "FilzaApplySandboxExt.dylib" -exec cp {} output/ \; 2>/dev/null
+        ls -la output/ 2>/dev/null || echo "output is empty"
     - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
         name: FilzaApplySandboxExt-iOS26.3
         path: output/
+        if-no-files-found: error
