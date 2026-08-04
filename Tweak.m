@@ -8,7 +8,7 @@
 #include "sandbox_escape.h"
 #include "apfs_own.h"
 
-// === 本地日志：写 /tmp（沙盒未逃逸也能写）===
+// === 日志：写 /tmp，构造函数里第一个调用 ===
 static void DSLOG(NSString *fmt, ...) {
     va_list args;
     va_start(args, fmt);
@@ -23,6 +23,16 @@ static void DSLOG(NSString *fmt, ...) {
         fprintf(f, "[%s] %s\n", ts.UTF8String, msg.UTF8String);
         fclose(f);
     }
+}
+
+// === 超早日志：在 DSLOG 可用前用 ===
+static void EARLY_LOG(const char *msg) {
+    FILE *f = fopen("/tmp/sbx_escape.log", "a");
+    if (f) {
+        fprintf(f, "%s\n", msg);
+        fclose(f);
+    }
+    NSLog(@"%s", msg);
 }
 
 #pragma mark - Root Helper Hooks
@@ -645,3 +655,33 @@ static void runExploit(void) {
 
     // Defer vnode-heavy operations to a later timer
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 2 * NSEC_PER_SEC),
+        dispatch_get_global_queue(QOS_CLASS_BACKGROUND, 0), ^{
+        DSLOG(@"[Tweak] Deferred vnode ops running...");
+    });
+}
+
+#pragma mark - Entry Point
+
+__attribute__((constructor)) void TweakInit(void) {
+    EARLY_LOG("=== TweakInit START ===");
+    installHooks();
+    EARLY_LOG("=== Hooks installed, checking sandbox ===");
+
+    // Check if sandbox is already escaped
+    int fd = open("/var/mobile/.sbx_check", O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    if (fd >= 0) {
+        close(fd); unlink("/var/mobile/.sbx_check");
+        DSLOG(@"[Tweak] Sandbox already escaped");
+        return;
+    }
+    
+    EARLY_LOG("=== Waiting for app launch to run exploit ===");
+
+    [[NSNotificationCenter defaultCenter] addObserverForName:UIApplicationDidFinishLaunchingNotification
+        object:nil queue:nil usingBlock:^(NSNotification *note) {
+        EARLY_LOG("=== App launched! Starting exploit... ===");
+        dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+            runExploit();
+        });
+    }];
+}
