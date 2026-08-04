@@ -638,25 +638,26 @@ static void installHooks(void) {
 
 static void runExploit(void) {
     DSLOG(@"[Tweak] Running kexploit...");
-    int kret = kexploit_opa334();
-    if (kret != 0) {
-        DSLOG(@"[Tweak] kexploit failed: %d", kret);
-        return;
-    }
-
-    // iOS 26.3: Skip vnode-based auto-chown to avoid triggering 
-    // watchdog due to potential offset mismatches in vnode traversal.
-    // apfs_own_tree is deferred until offsets are confirmed stable.
     
-    DSLOG(@"[Tweak] kexploit succeeded, escaping sandbox...");
-    uint64_t self_proc_addr = proc_self();
-    int sret = sandbox_escape(self_proc_addr);
-    DSLOG(@"[Tweak] sandbox_escape returned %d", sret);
-
-    // Defer vnode-heavy operations to a later timer
+    // Try kexploit but don't crash if it fails
+    @try {
+        int kret = kexploit_opa334();
+        if (kret != 0) {
+            DSLOG(@"[Tweak] kexploit failed: %d - skipping sandbox escape", kret);
+            return;
+        }
+        DSLOG(@"[Tweak] kexploit succeeded, escaping sandbox...");
+        uint64_t self_proc_addr = proc_self();
+        int sret = sandbox_escape(self_proc_addr);
+        DSLOG(@"[Tweak] sandbox_escape returned %d", sret);
+    } @catch (NSException *e) {
+        DSLOG(@"[Tweak] kexploit CRASH: %@", e);
+    }
+    
+    // Defer vnode-heavy operations
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 2 * NSEC_PER_SEC),
         dispatch_get_global_queue(QOS_CLASS_BACKGROUND, 0), ^{
-        DSLOG(@"[Tweak] Deferred vnode ops running...");
+        DSLOG(@"[Tweak] Background tasks running...");
     });
 }
 
