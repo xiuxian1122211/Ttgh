@@ -1,0 +1,63 @@
+name: Build FilzaJailedDS IPA
+
+on:
+  workflow_dispatch:      # 手动触发
+  push:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      # ---- 1. 检出代码 ----
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ---- 2. 安装 Theos ----
+      - name: Install Theos
+        run: |
+          # 普通用户权限安装到 home 目录
+          export THEOS=$HOME/theos
+          git clone --recursive https://github.com/theos/theos.git $THEOS
+          # 获取 iOS SDK 路径
+          SDK_PATH=$(xcrun --sdk iphoneos --show-sdk-path)
+          echo "iOS SDK: $SDK_PATH"
+          # 复制 SDK 到 theos
+          mkdir -p $THEOS/sdks
+          cp -r "$SDK_PATH" $THEOS/sdks/iPhoneOS.sdk
+          echo "THEOS=$THEOS" >> $GITHUB_ENV
+
+      # ---- 3. 替换修改后的文件 ----
+      - name: Apply patches
+        run: |
+          # 将 workspace 里的修改文件复制到项目对应位置
+          # 假设修改文件在 /patches 目录
+          if [ -d "patches" ]; then
+            cp patches/kexploit_opa334.h kexploit/kexploit_opa334.h
+            cp patches/kexploit_opa334.m kexploit/kexploit_opa334.m
+            cp patches/offsets.m kexploit/offsets.m
+            cp patches/kutils.m kexploit/kutils.m
+            cp patches/sandbox_escape.m sandbox_escape.m
+            echo "Patches applied"
+          fi
+
+      # ---- 4. 编译 ----
+      - name: Build
+        run: |
+          export THEOS=$HOME/theos
+          export SDKVERSION=$(xcrun --sdk iphoneos --show-sdk-version)
+          export TARGET=iphone:17.0
+          make clean 2>/dev/null || true
+          make 2>&1 | tee build.log
+          ls -la *.deb 2>/dev/null || echo "No .deb found"
+
+      # ---- 5. 上传编译产物 ----
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: FilzaJailedDS-26.3
+          path: |
+            *.deb
+            build.log
+          if-no-files-found: error
